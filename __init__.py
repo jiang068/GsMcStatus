@@ -8,12 +8,9 @@ from .config import load_aliases, save_aliases
 
 sv_mc = SV('MC状态查询')
 
-@sv_mc.on_command('mc', block=True)
+@sv_mc.on_prefix('mc ', block=True)
 async def handle_mc_status(bot: Bot, ev: Event):
     text = ev.text.strip()
-    
-    if not text:
-        return await bot.send('请输入服务器地址或别名！使用 mc help 查看帮助。')
 
     args = text.split()
     cmd = args[0]
@@ -58,16 +55,13 @@ async def handle_mc_status(bot: Bot, ev: Event):
         if not aliases:
             return await bot.send('当前没有配置任何服务器别名！请使用 mc add <别名> <地址> 添加。')
 
-        # 封装一下用于并发的内部函数
         async def fetch_alias(alias_name, addr):
             status, _, _ = await get_server_status(addr)
             return alias_name, status
             
-        # 并发获取所有服务器状态，极大提高 ls 速度
         tasks = [fetch_alias(k, v) for k, v in aliases.items()]
         results = await asyncio.gather(*tasks)
         
-        # 按照在线人数从高到低排序，连不上的放到最后
         def sort_key(item):
             status = item[1]
             return status.players.online if status else -1
@@ -85,17 +79,14 @@ async def handle_mc_status(bot: Bot, ev: Event):
         return await bot.send(info)
 
     else:
-        # 常规的单服状态查询
         aliases = load_aliases()
         
-        # 检查输入的 cmd 是否存在于别名列表中
         is_alias = cmd in aliases
         target_address = aliases.get(cmd, cmd)
         
         status, query_players, err = await get_server_status(target_address)
 
         if status:
-            # 如果是别名查询，传入 target_address 作为实际地址显示；否则不传入
             actual_addr_to_show = target_address if is_alias else None
             msg = format_status(status, query_players, actual_addr_to_show)
             await bot.send(msg)
