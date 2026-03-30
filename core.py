@@ -6,31 +6,33 @@ async def get_server_status(address: str):
         server = JavaServer.lookup(address)
         status = await server.async_status()
         
-        # 后备方案：如果有人在线但没拿到 sample 名单，尝试使用 Query 协议获取
         query_players = []
         if status.players.online > 0 and not status.players.sample:
             try:
-                # 注意：这需要服务器在 server.properties 中开启 enable-query=true
                 query = await server.async_query()
                 query_players = query.players.names
             except Exception:
-                pass # 如果没开 Query 或者报错，直接忽略
+                pass 
                 
         return status, query_players, None
     except Exception as e:
         return None, [], str(e)
 
-def format_status(status: JavaStatusResponse, query_players: list) -> str:
-    # 提取 MOTD
+# 增加 actual_address 参数，默认为 None
+def format_status(status: JavaStatusResponse, query_players: list, actual_address: str = None) -> str:
     motd = "".join([i.strip(" ") for i in status.motd.parsed if isinstance(i, str)])
     spliter = "--------------------"
     
     info = f"{motd}\n{spliter}\n"
+    
+    # 如果传入了真实地址（说明用了别名），则额外插入一行真实地址
+    if actual_address:
+        info += f"{actual_address}\n{spliter}\n"
+        
     info += f"版本：{status.version.name}\n"
     info += f"延迟：{status.latency:.1f}ms\n"
     info += f"在线人数：{status.players.online}/{status.players.max}"
     
-    # 优先使用 query 获取到的完整名单，如果没有再用 ping 的 sample 名单
     if query_players:
         player_list = query_players
     else:
@@ -41,7 +43,6 @@ def format_status(status: JavaStatusResponse, query_players: list) -> str:
         ]
     
     if player_list:
-        # 仿照原版插件，如果超过 5 个人，或者获取到的名单少于实际在线人数，加个省略号
         show_ellipsis = len(player_list) > 5 or len(player_list) < status.players.online
         info += f"\n成员：{', '.join(player_list[:5])}{' ...' if show_ellipsis else ''}"
         

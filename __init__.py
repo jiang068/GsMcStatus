@@ -1,3 +1,4 @@
+import asyncio
 from gsuid_core.sv import SV
 from gsuid_core.bot import Bot
 from gsuid_core.models import Event
@@ -5,13 +6,10 @@ from gsuid_core.models import Event
 from .core import get_server_status, format_status
 from .config import load_aliases, save_aliases
 
-# 直接像 GsJrys 那样定义服务，去掉所有的 Plugins 注册代码
 sv_mc = SV('MC状态查询')
 
-# 使用 on_command 并且加上 block=True 拦截消息
 @sv_mc.on_command('mc', block=True)
 async def handle_mc_status(bot: Bot, ev: Event):
-    # ev.text 会自动去除前面的指令 'mc'
     text = ev.text.strip()
     
     if not text:
@@ -25,9 +23,10 @@ async def handle_mc_status(bot: Bot, ev: Event):
             "GsMcStatus 帮助：\n"
             "1. mc <地址/别名> - 查询状态\n"
             "   示例：mc mc.frp.example:3544\n"
-            "2. mc add <别名> <地址> - 添加别名\n"
+            "2. mc ls - 查看所有已保存别名的服务器状态\n"
+            "3. mc add <别名> <地址> - 添加别名\n"
             "   示例：mc add name1 mc.frp.example:3544\n"
-            "3. mc del <别名> - 删除别名\n"
+            "4. mc del <别名> - 删除别名\n"
             "   示例：mc del name1"
         )
         return await bot.send(help_text)
@@ -54,16 +53,51 @@ async def handle_mc_status(bot: Bot, ev: Event):
         else:
             return await bot.send(f'未找到别名：{alias_name}')
 
-    else:
+    elif cmd == 'ls':
         aliases = load_aliases()
+        if not aliases:
+            return await bot.send('当前没有配置任何服务器别名！请使用 mc add <别名> <地址> 添加。')
+
+        # 封装一下用于并发的内部函数
+        async def fetch_alias(alias_name, addr):
+            status, _, _ = await get_server_status(addr)
+            return alias_name, status
+            
+        # 并发获取所有服务器状态，极大提高 ls 速度
+        tasks = [fetch_alias(k, v) for k, v in aliases.items()]
+        results = await asyncio.gather(*tasks)
+        
+        # 按照在线人数从高到低排序，连不上的放到最后
+        def sort_key(item):
+            status = item[1]
+            return status.players.online if status else -1
+            
+        results.sort(key=sort_key, reverse=True)
+        
+        info = "服务器状态列表\n----------------"
+        for alias_name, status in results:
+            if status:
+                info_text = f"{status.latency:.1f}ms {status.players.online}/{status.players.max}人在线"
+            else:
+                info_text = "无法连接或已离线"
+            info += f"\n{alias_name}: {info_text}"
+            
+        return await bot.send(info)
+
+    else:
+        # 常规的单服状态查询
+        aliases = load_aliases()
+        
+        # 检查输入的 cmd 是否存在于别名列表中
+        is_alias = cmd in aliases
         target_address = aliases.get(cmd, cmd)
         
-        # 接收三个返回值
         status, query_players, err = await get_server_status(target_address)
 
         if status:
-            # 传入 query_players
-            msg = format_status(status, query_players)
+            # 如果是别名查询，传入 target_address 作为实际地址显示；否则不传入
+            actual_addr_to_show = target_address if is_alias else None
+            msg = format_status(status, query_players, actual_addr_to_show)
             await bot.send(msg)
         else:
             await bot.send(f"无法连接到服务器：{err}")
