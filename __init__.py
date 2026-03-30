@@ -55,14 +55,15 @@ async def handle_mc_status(bot: Bot, ev: Event):
             return await bot.send(f'未找到别名：{alias_name}')
 
     else:
-        # 如果不是上面三个特殊指令，就当作是在查询服务器
         aliases = load_aliases()
         target_address = aliases.get(cmd, cmd)
         
-        status, err = await get_server_status(target_address)
+        # 接收三个返回值
+        status, query_players, err = await get_server_status(target_address)
 
         if status:
-            msg = format_status(status)
+            # 传入 query_players
+            msg = format_status(status, query_players)
             await bot.send(msg)
         else:
             await bot.send(f"无法连接到服务器：{err}")
