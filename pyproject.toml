@@ -1,0 +1,8 @@
+[project]
+name = "GsMcStatus"
+version = "1.0.0"
+description = "A Minecraft Server Status plugin for GsCore"
+readme = "README.md"
+dependencies = [
+    "mcstatus"
+]
